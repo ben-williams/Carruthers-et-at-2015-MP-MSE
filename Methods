@@ -1,0 +1,81 @@
+
+# ======================================================================================================================
+# 
+# PERFORMANCE REVIEW OF SIMPLE MANAGEMENT PROCEDURES
+# 
+# Carruthers et al. 2015.
+# [Code accompanying submission to ICES Journal of Marine Science]
+#
+# May 2015
+# - University of British Columbia -
+# - The Natural Resources Defense Council -
+# - International Commission for the Conservation of Atlantic Tunas -
+#
+# Please send enquiries to t.carruthers@fisheries.ubc.ca
+#
+# ======================================================================================================================
+
+
+# (1) Prerequisites ====================================================================================================
+rm(list=ls(all=TRUE))
+library(DLMtool)                                                    # library for MSE in R
+for(i in 1:length(DLMdat))assign(DLMdat[[i]]@Name,DLMdat[[i]])      # load data (stock, data, fleet objects)                                                  # load all data in package
+sfInit(parallel=T,cpus=8)                                           # initiate parallel processing
+sfExportAll()                                                       # send everything to the cluster
+
+
+# (2) Define operating models ==========================================================================================
+
+Species<-c('Herring','Bluefin_tuna','Rockfish')                     # select species (varying longevity)
+ObsMod<-c("Perfect_Info","Precise_Unbiased","Imprecise_Biased")     # define observation model scenarios
+RecAC<-array(c(0,0.6,0.3,0.9),c(2,2))                               # various levels of recruitment autocorrelation
+Dep<-array(c(0.025,0.15,0.15,0.35),c(2,2))                          # various levels of stock depletion
+nS<-length(Species)                                                 # number of species
+nO<-length(ObsMod)                                                  # number of observation models
+nAC<-nrow(RecAC)                                                    # number of levels of recruitment autocorrelation
+nD<-nrow(Dep)                                                       # number of levels of stock depletion
+
+ind<-expand.grid(1:nS,1:nO,1:nAC,1:nD)                              # the combinations of Species, RecComp and ObsMod
+nOM<-nS*nO*nAC*nD                                                   # number of operating models
+OMs<-new('list')                                                    # a list of Operating Models 
+
+for(i in 1:nOM){                                                    # define operating models
+  assign('temp_stock',get(Species[ind[i,1]]))                       # load the stock type
+  temp_stock@AC<-RecAC[ind[i,3],]                                   # set the recruitment autocorrelation
+  temp_stock@D<-Dep[ind[i,4],]                                      # set the depletion range
+  OMs[[i]]<-new('OM',temp_stock,Generic_fleet,get(ObsMod[ind[i,2]]))    # create a new operating model
+  OMs[[i]]@Name<-paste(Species[ind[i,1]],c("PI","DataRich","DataPoor")[ind[i,2]],c("lowAC","highAC")[ind[i,3]],c("0_15","15_35")[ind[i,4]],sep="_")
+}
+
+
+# (3) Run MSEs ==========================================================================================================
+
+nsim<-500                                                                   # number of simulations 
+reps<-1                                                                     # use deterministic MPs (just one replicate calculation no Monte Carlo simulation)
+proyears<-40                                                                # 40 projected years
+interval<-3                                                                 # update TAC every three years
+Meths<-c("GB_CC","GB_slope","GB_target","SPmod","SPslope","SBT1","SBT2",
+         "DynF","Fadapt","DD","DD4010","Gcontrol","Rcontrol","Rcontrol2",
+         "DCAC","Fratio","CC1","CC4","LstepCC1","LstepCC4",
+         "Ltarget1","Ltarget4","Islope1","Islope4","Itarget1","Itarget4")   # MPs to simulation test
+
+MSEs<-new('list')                                                           # create a list object to store MSE results
+
+for(i in 1:nOM){
+  print("==================================")
+  print(i)
+  MSEs[[i]]<-runMSE(OMs[[i]],Meths,nsim,proyears,interval,pstar=0.5,maxF=0.8,timelimit=20,reps)  # run the MSEs
+} 
+
+# (4) Plot the performance trade-off of one MSE
+
+Tplot(MSEs[[1]])
+
+# (5) Plot the stock trajectories of an MSE
+
+Pplot(MSEs[[1]])
+
+
+# ========================================================================================================
+# === END OF SCRIPT ======================================================================================
+# ========================================================================================================
